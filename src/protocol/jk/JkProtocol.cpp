@@ -399,7 +399,11 @@ bool JkProtocol::parseOldFrame(const uint8_t* p, size_t n, BmsData& o) {
 
   // 先在临时对象中解析；任何后续有效性检查失败都不能污染主界面数据。
   BmsData d = o;
-  uint32_t mask = u32le(p + 54 + off);
+  // 电芯使能bitmask紧跟电芯电压区：24S位于54，32S位于70。
+  // 不能直接把主数据区偏移(off=32)加到mask上，否则32S会错读到86。
+  const size_t maskOffset = protocol32S_ ?
+      Jk02_32S::CELL_MASK_OFFSET : Jk02_24S::CELL_MASK_OFFSET;
+  uint32_t mask = u32le(p + maskOffset);
   uint8_t maxCells = protocol32S_ ? Jk02_32S::MAX_CELLS : Jk02_24S::MAX_CELLS;
   uint8_t cells = 0;
 
@@ -440,10 +444,12 @@ bool JkProtocol::parseOldFrame(const uint8_t* p, size_t n, BmsData& o) {
   d.power = d.totalVoltage * d.current;
   d.temperature1 = s16le(p + 130 + off) * 0.1f;
   d.temperature2 = s16le(p + 132 + off) * 0.1f;
-  d.mosTemperature = s16le(p + (off ? 112 + off : 134)) * 0.1f;
+  // MOS温度位于主数据区的134+off；不能把32S温度读到112+off。
+  d.mosTemperature = s16le(p + 134 + off) * 0.1f;
 
-  if (protocol32S_) d.errors = u32le(p + 134 + off);
-  else d.errors = u16le(p + 136);
+  // 告警字段紧随MOS温度之后。按两字节读取，避免32S把MOS温度字节
+  // 当成32位告警码（旧实现的134+off会与MOS温度字段重叠）。
+  d.errors = u16le(p + 136 + off);
 
   d.balancingCurrent = u16le(p + 138 + off) * 0.001f;
   d.balancing = p[140 + off] != 0;

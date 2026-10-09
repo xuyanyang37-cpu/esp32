@@ -203,7 +203,7 @@ void setup(){
     // 首次启动已经完成“连接 + 有效数据”验证。
     // 从这里开始，运行期断线恢复才启用独立的3次失败状态机。
     bmsBle.setRuntimeRecoveryEnabled(true);
-    Serial.printf("BOOT: connection verified, protocol=%s, runtime recovery enabled.\\n",proto.c_str());
+    Serial.printf("BOOT: connection verified, protocol=%s, runtime recovery enabled.\n",proto.c_str());
 
     // setup() return 后，Arduino自动进入 loop()。
     return;

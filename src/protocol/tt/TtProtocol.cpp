@@ -143,6 +143,9 @@ bool TtProtocol::parseModbus(const uint8_t* f,size_t n,BmsData& o){
   d.valid=(d.totalVoltage>0.5f && d.cellCount>0);
   d.updateMs=millis();
 
+  // 若尚未收到独立设备信息响应，至少用协议名标识，避免主界面错误显示为 JK BMS。
+  if(d.deviceName.length()==0) d.deviceName="TT BMS";
+
   if(d.energyConsumptionWhKm>1.0f)
     d.remainingRangeKm=(d.remainingCapacityAh*d.totalVoltage)/d.energyConsumptionWhKm;
 

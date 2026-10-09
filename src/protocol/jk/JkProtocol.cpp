@@ -109,40 +109,42 @@ int32_t JkProtocol::s32be(const uint8_t* p) {
 }
 
 int JkProtocol::tagSize(uint8_t tag) {
+  // JK02 4E57 TLV widths based on observed JK02 response frames.
+  // 0x79 is the only variable-length field in the telemetry block.
   switch (tag) {
-    case 0x79: return -1; // variable: cell index + mV
+    case 0x79: return -1; // variable: cell index + mV (3 bytes per cell)
     case 0x80:
     case 0x81:
-    case 0x82: return 2;
-    case 0x83: return 4; // total voltage
-    case 0x84: return 4; // current
+    case 0x82: return 2; // MOS / battery temperatures, signed integer °C
+    case 0x83: return 2; // total voltage, 0.01 V
+    case 0x84: return 2; // signed current, 0.001 A
     case 0x85: return 1; // SOC
     case 0x86: return 1;
-    case 0x87: return 4; // cycle count
+    case 0x87: return 2; // cycle count
     case 0x88: return 4; // total capacity
-    case 0x89: return 4; // alarm
-    case 0x8A: return 2; // charge/discharge/balance
+    case 0x89: return 4; // alarm bitmap
+    case 0x8A: return 2; // status flags
     case 0x8B:
     case 0x8C:
-    case 0x8D: return 2;
+    case 0x8D:
     case 0x8E:
     case 0x8F:
     case 0x90:
     case 0x91:
     case 0x92:
-    case 0x93: return 4;
+    case 0x93:
     case 0x94:
-    case 0x95: return 2;
+    case 0x95:
     case 0x96:
     case 0x97:
-    case 0x98: return 4;
+    case 0x98:
     case 0x99:
-    case 0x9A: return 2;
-    case 0x9B: return 4;
+    case 0x9A:
+    case 0x9B:
     case 0x9C: return 2;
     case 0x9D: return 1;
     case 0x9E:
-    case 0x9F: return 2;
+    case 0x9F:
     case 0xA0:
     case 0xA1:
     case 0xA2:
@@ -153,7 +155,7 @@ int JkProtocol::tagSize(uint8_t tag) {
     case 0xA7:
     case 0xA8: return 2;
     case 0xA9: return 1; // actual cell count
-    case 0xAA: return 4; // remaining capacity
+    case 0xAA: return 4; // remaining capacity, mAh
     case 0xAB:
     case 0xAC: return 1;
     case 0xAD: return 2;
@@ -161,21 +163,21 @@ int JkProtocol::tagSize(uint8_t tag) {
     case 0xAF: return 1;
     case 0xB0: return 2;
     case 0xB1: return 1;
-    case 0xB2: return 16;
+    case 0xB2: return 10; // serial/device identifier in observed frame
     case 0xB3: return 1;
-    case 0xB4: return 8;
-    case 0xB5: return 6;
+    case 0xB4: return 8; // hardware/input text
+    case 0xB5: return 4; // software version in observed frame
     case 0xB6: return 4;
     case 0xB7: return 16;
     case 0xB8: return 1;
     case 0xB9: return 4;
-    case 0xBA: return 16; // BMS name
+    case 0xBA: return 24; // manufacturer/BMS identifier
     case 0xBB:
     case 0xBC: return 4;
+    case 0xC0: return 1; // protocol version
     default: return 0;
   }
 }
-
 int JkProtocol::detectOffset(const uint8_t*, size_t) const {
   return protocol32S_ ? Jk02_32S::DATA_OFFSET : Jk02_24S::DATA_OFFSET;
 }
@@ -219,18 +221,23 @@ bool JkProtocol::parseNewTlvFrame(const uint8_t* p, size_t n, BmsData& o) {
 
       if (tag == 0x79) {
         // [cellIndex][cellVoltage_mV_hi][cellVoltage_mV_lo]
-        uint8_t count = dataLen / 3;
-        if (count > JK_MAX_CELLS) count = JK_MAX_CELLS;
+        if ((dataLen % 3U) != 0U) return false;
+        uint8_t entries = dataLen / 3U;
+        if (entries > JK_MAX_CELLS) return false;
 
-        for (uint8_t i = 0; i < count; ++i) {
-          if (cur + 3 > end) break;
-          uint8_t index = cur[0];
+        uint8_t highestIndex = 0;
+        for (uint8_t i = 0; i < entries; ++i) {
+          if (cur + 3 > end) return false;
+          uint8_t index = cur[0]; // JK cell indices are 1-based
           uint16_t mv = ((uint16_t)cur[1] << 8) | cur[2];
 
-          if (index < JK_MAX_CELLS) d.cellVoltage[index] = mv * 0.001f;
+          if (index >= 1 && index <= JK_MAX_CELLS && mv > 0) {
+            d.cellVoltage[index - 1] = mv * 0.001f;
+            if (index > highestIndex) highestIndex = index;
+          }
           cur += 3;
         }
-        d.cellCount = count;
+        d.cellCount = highestIndex;
       } else {
         cur += dataLen;
       }
@@ -300,9 +307,9 @@ bool JkProtocol::parseNewTlvFrame(const uint8_t* p, size_t n, BmsData& o) {
         break;
 
       case 0xBA: {
-        size_t copyLen = sz < 16 ? sz : 16;
+        size_t copyLen = sz < 24 ? sz : 24;
         // BmsData.deviceName is String, so copy through a temporary C string.
-        char nameBuf[17];
+        char nameBuf[25];
         memcpy(nameBuf, cur, copyLen);
         nameBuf[copyLen] = '\0';
         for (size_t i = 0; i < copyLen; ++i) {
@@ -360,7 +367,9 @@ bool JkProtocol::parseNewTlvFrame(const uint8_t* p, size_t n, BmsData& o) {
       (d.remainingCapacityAh * d.totalVoltage) / d.energyConsumptionWhKm;
   }
 
-  d.valid = d.totalVoltage > 0.1f || d.cellCount > 0 || d.soc > 0;
+  // Do not accept a partial/garbage TLV frame as live telemetry.
+  d.valid = d.totalVoltage >= 1.0f && d.totalVoltage <= 100.0f &&
+            d.cellCount > 0 && d.cellCount <= JK_MAX_CELLS;
   d.online = d.valid;
   d.updateMs = millis();
 

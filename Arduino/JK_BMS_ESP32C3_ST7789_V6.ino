@@ -35,7 +35,7 @@ static void startHotspot(){
   g_bmsData.bootState=BOOT_HOTSPOT;
   g_bmsData.statusMessage="等待网页设置";
   webConfig.begin(&bmsBle);
-  Serial.printf("HOTSPOT: %s %s heap=%u\\n",AP_SSID,ip.toString().c_str(),ESP.getFreeHeap());
+  Serial.printf("HOTSPOT: %s %s heap=%u\n",AP_SSID,ip.toString().c_str(),ESP.getFreeHeap());
 }
 
 void setup(){
@@ -44,7 +44,7 @@ void setup(){
 
   esp_reset_reason_t resetReason=esp_reset_reason();
   Serial.println();
-  Serial.printf("ESP32 reset reason: %d\\n",(int)resetReason);
+  Serial.printf("ESP32 reset reason: %d\n",(int)resetReason);
 
   pinMode(TFT_BL,OUTPUT);
   digitalWrite(TFT_BL,LOW);
@@ -78,7 +78,7 @@ void setup(){
   display.update(g_bmsData);
   delay(100);
 
-  Serial.printf("BOOT: saved JK MAC = %s type=%u\\n",
+  Serial.printf("BOOT: saved JK MAC = %s type=%u\n",
                 savedMac.c_str(),bmsBle.getConfiguredAddressType());
 
   bool connectedOk=bmsBle.connectByAddress(

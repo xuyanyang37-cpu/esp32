@@ -59,35 +59,34 @@ bool JbdProtocol::parseFrame(const uint8_t* p, size_t n, BmsData& out) {
   BmsData next = out;
 
   if (command == 0x03) {
-    // JBD 常见基本信息响应，字段偏移针对标准 0x03 数据区。
-    // 至少需要电压、电流、容量、SOC、电芯数和温度数等字段。
-    if (dataLen < 23) return false;
+    // 0x03数据区标准偏移：SOC=17、FET=18、电芯数=19、NTC数=20、温度从21开始。
+    // 至少需要完整的固定字段；温度数量再决定后续数据长度。
+    if (dataLen < 21) return false;
 
     next.totalVoltage = float(u16be(d + 0)) * 0.01f;
     next.current = float(s16be(d + 2)) * 0.01f;
     next.remainingCapacityAh = float(u16be(d + 4)) * 0.01f;
     next.totalCapacityAh = float(u16be(d + 6)) * 0.01f;
     next.cycleCount = u16be(d + 8);
-    next.soc = float(d[19]);
-    if (next.soc > 100.0f) next.soc = 100.0f;
+    next.errors = u16be(d + 14);
+    next.soc = float(d[17]);
+    if (next.soc > 100.0f) return false;
 
-    uint8_t cells = d[21];
-    uint8_t sensors = d[22];
+    uint8_t fetStatus = d[18];
+    uint8_t cells = d[19];
+    uint8_t sensors = d[20];
     if (cells == 0 || cells > JK_MAX_CELLS) return false;
-    if (size_t(23U + size_t(sensors) * 2U) > dataLen) return false;
+    if (size_t(21U + size_t(sensors) * 2U) > dataLen) return false;
 
     next.cellCount = cells;
-    next.errors = u16be(d + 16);
-    next.charging = (d[20] & 0x01) != 0;
-    next.discharging = (d[20] & 0x02) != 0;
+    next.charging = (fetStatus & 0x01) != 0;
+    next.discharging = (fetStatus & 0x02) != 0;
 
-    // 温度字段是 0.1K，转换为摄氏度。最多映射两个温度传感器。
-    if (sensors >= 1) next.temperature1 = float(u16be(d + 23)) * 0.1f - 273.15f;
-    if (sensors >= 2) next.temperature2 = float(u16be(d + 25)) * 0.1f - 273.15f;
-    if (sensors == 0) {
-      next.temperature1 = 0.0f;
-      next.temperature2 = 0.0f;
-    }
+    // 温度字段是0.1K，转换为摄氏度；主界面最多显示两个传感器。
+    if (sensors >= 1) next.temperature1 = float(u16be(d + 21)) * 0.1f - 273.15f;
+    else next.temperature1 = 0.0f;
+    if (sensors >= 2) next.temperature2 = float(u16be(d + 23)) * 0.1f - 273.15f;
+    else next.temperature2 = 0.0f;
 
     next.power = next.totalVoltage * next.current;
     if (next.totalCapacityAh > 0.0f)

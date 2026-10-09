@@ -554,6 +554,15 @@ void BmsBle::onYanyangStatus(const BmsData& data){
   g_bmsData.mosTemperature=data.mosTemperature;
   g_bmsData.totalCapacityAh=data.totalCapacityAh;
   g_bmsData.remainingCapacityAh=data.remainingCapacityAh;
+  // 续航里程属于本机估算值：必须使用全局网页配置的 Wh/km 参数，
+  // 不能依赖解码器临时 BmsData 的默认值，否则彦阳协议一直显示 0 KM。
+  if(g_bmsData.energyConsumptionWhKm>1.0f && data.totalVoltage>0.1f){
+    g_bmsData.remainingRangeKm=
+      (data.remainingCapacityAh*data.totalVoltage)/g_bmsData.energyConsumptionWhKm;
+  }else{
+    g_bmsData.remainingRangeKm=0.0f;
+  }
+  if(g_bmsData.deviceName.length()==0) g_bmsData.deviceName="YANYANG BMS";
   g_bmsData.statusMessage="彦阳保护板数据已更新";
   if(instance_ && g_bmsData.mac.length() &&
      instance_->getConfiguredAddress()!=g_bmsData.mac)
@@ -561,7 +570,10 @@ void BmsBle::onYanyangStatus(const BmsData& data){
 }
 
 void BmsBle::onYanyangDeviceInfo(const char* hardwareVersion,const char* softwareVersion){
-  Serial.printf("Yanyang BMS detected: HW=%s SW=%s\n",
+  g_bmsData.hardwareVersion=hardwareVersion ? hardwareVersion : "";
+  g_bmsData.softwareVersion=softwareVersion ? softwareVersion : "";
+  if(g_bmsData.deviceName.length()==0) g_bmsData.deviceName="YANYANG BMS";
+  Serial.printf("Yanyang BMS detected: HW=%s SW=%s\\n",
                 hardwareVersion ? hardwareVersion : "unknown",
                 softwareVersion ? softwareVersion : "unknown");
 }

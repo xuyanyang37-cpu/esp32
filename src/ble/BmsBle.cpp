@@ -226,7 +226,7 @@ bool BmsBle::scanAndConnect(uint32_t sec, uint8_t attemptOverride){
   // ================================================================
   if(configuredAddress_.length()){
     setStatus(BOOT_CONNECTING,"连接已保存BMS");
-    Serial.printf("BLE FAST CONNECT: %s type=%u\\n",
+    Serial.printf("BLE FAST CONNECT: %s type=%u\n",
                   configuredAddress_.c_str(),configuredAddressType_);
     if(connectByAddress(configuredAddress_,configuredAddressType_))
       return true;
@@ -628,7 +628,7 @@ void BmsBle::loop(){
       uint8_t reconnectAttempt=(uint8_t)(recoveryFailures_+1);
       if(reconnectAttempt<1 || reconnectAttempt>3) reconnectAttempt=1;
 
-      Serial.printf("BLE RECOVERY: attempt %u/3, previous failures=%u\\n",
+      Serial.printf("BLE RECOVERY: attempt %u/3, previous failures=%u\n",
                     reconnectAttempt,recoveryFailures_);
 
       if(scanAndConnect(3,reconnectAttempt)){
@@ -641,7 +641,7 @@ void BmsBle::loop(){
         }
       } else {
         recoveryFailures_++;
-        Serial.printf("BLE RECOVERY: failed %u/3\\n",recoveryFailures_);
+        Serial.printf("BLE RECOVERY: failed %u/3\n",recoveryFailures_);
       }
 
       if(recoveryFailures_>=3){

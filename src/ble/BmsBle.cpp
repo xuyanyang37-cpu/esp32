@@ -422,26 +422,28 @@ void BmsBle::handleNotification(const uint8_t* d,size_t n){
   g_rxLen+=n;
 
   while(g_rxLen>=3){
+    // 先找最早的协议帧头。FC xx 06 只能当作帧外ACK处理，
+    // 绝不能在有效协议帧内部搜索并删除，否则可能破坏电压/校验字节。
+    int startIdx=protocolManager_.findFrameStart(g_rxBuf,g_rxLen);
+    size_t ackLimit=(startIdx>=0)?(size_t)startIdx:g_rxLen;
     bool ackFound=false;
-    for(size_t i=0;i+2<g_rxLen;){
+
+    for(size_t i=0;i+2<ackLimit;){
       if(g_rxBuf[i]==0xFC && g_rxBuf[i+2]==0x06){
-        Serial.printf("BMS RX: legacy ACK FC %02X 06\n",g_rxBuf[i+1]);
+        Serial.printf("BMS RX: legacy ACK FC %02X 06\\n",g_rxBuf[i+1]);
         g_legacyAckSeen=true;
-        ackFound=true;
         memmove(g_rxBuf+i,g_rxBuf+i+3,g_rxLen-(i+3));
         g_rxLen-=3;
-        continue;
+        ackFound=true;
+        // 缓冲区已改变，重新找帧头和ACK边界。
+        break;
       }
       ++i;
     }
+    if(ackFound) continue;
 
-    if(g_rxLen<4){
-      if(ackFound) lastRequest_=0;
-      break;
-    }
-
-    int startIdx=protocolManager_.findFrameStart(g_rxBuf,g_rxLen);
     if(startIdx<0){
+      // 没有帧头时只保留可能构成跨通知帧头的最后3字节。
       if(g_rxLen>3){
         memmove(g_rxBuf,g_rxBuf+g_rxLen-3,3);
         g_rxLen=3;
@@ -450,15 +452,23 @@ void BmsBle::handleNotification(const uint8_t* d,size_t n){
     }
 
     if(startIdx>0){
-      memmove(g_rxBuf,g_rxBuf+startIdx,g_rxLen-startIdx);
-      g_rxLen-=startIdx;
+      // 丢弃帧头之前的噪声；ACK已在上面单独处理。
+      memmove(g_rxBuf,g_rxBuf+startIdx,g_rxLen-(size_t)startIdx);
+      g_rxLen-=(size_t)startIdx;
       if(g_rxLen<4) break;
     }
 
     size_t expected=protocolManager_.frameLength(g_rxBuf,g_rxLen);
-    if(expected==0) break;
+    if(expected==0){
+      // 头部匹配但长度字段非法：丢弃一个字节重新同步，
+      // 不要停留在坏帧头导致后续通知永久卡住。
+      Serial.println("BMS RX: invalid frame header/length, resync");
+      memmove(g_rxBuf,g_rxBuf+1,g_rxLen-1);
+      --g_rxLen;
+      continue;
+    }
     if(expected>sizeof(g_rxBuf)){
-      Serial.printf("BMS RX: invalid frame length=%u, reset\n",(unsigned)expected);
+      Serial.printf("BMS RX: invalid frame length=%u, reset\\n",(unsigned)expected);
       g_rxLen=0;
       break;
     }
@@ -467,7 +477,6 @@ void BmsBle::handleNotification(const uint8_t* d,size_t n){
     if(protocolManager_.parseFrame(g_rxBuf,expected,g_bmsData)){
       g_bmsData.online=true;
       g_bmsData.updateMs=millis();
-      lastRequest_=millis();
 
       // 只有真正解析出有效BMS帧后，才保存当前候选MAC。
       if(g_bmsData.mac.length()){
@@ -482,11 +491,12 @@ void BmsBle::handleNotification(const uint8_t* d,size_t n){
       String saved=p.getString("protocol","");
       if(detected && detected[0] && strcmp(detected,"NONE")!=0 && strcmp(detected,saved.c_str())!=0){
         p.putString("protocol",detected);
-        Serial.printf("BMS protocol locked: %s\n",detected);
+        Serial.printf("BMS protocol locked: %s\\n",detected);
       }
       p.end();
     }
 
+    // 完整帧无论解析成功与否都消费掉，继续处理同一通知中的粘包。
     memmove(g_rxBuf,g_rxBuf+expected,g_rxLen-expected);
     g_rxLen-=expected;
   }

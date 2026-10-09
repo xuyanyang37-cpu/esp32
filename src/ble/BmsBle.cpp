@@ -324,9 +324,11 @@ bool BmsBle::connectByAddress(const String& address,uint8_t addressType){
     if(!notifyCh_ && (c->canNotify() || c->canIndicate())) notifyCh_=c;
   }
 
-  Serial.printf("BLE chars: %s W=%d N=%d; %s W=%d N=%d\n", notifyUuid,
+  Serial.printf("BLE chars: %s W=%d N=%d; %s W=%d N=%d\\n",
+                notifyUuid,
                 ffe1 ? (int)(ffe1->canWriteNoResponse() || ffe1->canWrite()) : 0,
                 ffe1 ? (int)(ffe1->canNotify() || ffe1->canIndicate()) : 0,
+                writeUuid,
                 ffe2 ? (int)(ffe2->canWriteNoResponse() || ffe2->canWrite()) : 0,
                 ffe2 ? (int)(ffe2->canNotify() || ffe2->canIndicate()) : 0);
 

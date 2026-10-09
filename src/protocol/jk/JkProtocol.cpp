@@ -64,10 +64,10 @@ size_t JkProtocol::frameLength(const uint8_t* p, size_t n) const {
   if (!p || n < 4) return 0;
 
   if (p[0] == 0x4E && p[1] == 0x57) {
-    // JK 4E57: bytes 2..3 = body length, total = body + 4.
-    uint16_t bodyLen = ((uint16_t)p[2] << 8) | p[3];
-    if (bodyLen < 8) return 0;
-    size_t total = (size_t)bodyLen + 4U;
+    // JK 4E57 length counts from byte 2 onward; total = length + 2-byte magic.
+    uint16_t frameLen = ((uint16_t)p[2] << 8) | p[3];
+    if (frameLen < 19) return 0;
+    size_t total = (size_t)frameLen + 2U;
     if (total > FRAME_MAX) return 0;
     return total;
   }
@@ -184,10 +184,18 @@ int JkProtocol::detectOffset(const uint8_t*, size_t) const {
 
 // [新版解析] 逐个Tag读取TLV字段。
 bool JkProtocol::parseNewTlvFrame(const uint8_t* p, size_t n, BmsData& o) {
-  if (!p || n < 14 || p[0] != 0x4E || p[1] != 0x57) return false;
+  if (!p || n < 20 || p[0] != 0x4E || p[1] != 0x57) return false;
 
-  size_t declared = (size_t)(((uint16_t)p[2] << 8) | p[3]) + 4U;
+  size_t declared = (size_t)(((uint16_t)p[2] << 8) | p[3]) + 2U;
   if (declared != n || declared > FRAME_MAX) return false;
+
+  // JK 4E57 末尾为记录号(4字节)、0x68、两个保留零字节和16位累加校验。
+  if (p[n - 5] != 0x68 || p[n - 4] != 0x00 || p[n - 3] != 0x00)
+    return false;
+  uint32_t checksumSum = 0;
+  for (size_t i = 0; i < n - 2; ++i) checksumSum += p[i];
+  uint16_t expectedChecksum = (uint16_t)(((uint16_t)p[n - 2] << 8) | p[n - 1]);
+  if ((uint16_t)checksumSum != expectedChecksum) return false;
 
   // 保留 MAC、网页配置、启动状态等本机字段，但每帧遥测字段先清零，
   // 避免旧帧缺少某个 Tag 时把上一次的电压/温度误当成本次数据。
@@ -206,8 +214,8 @@ bool JkProtocol::parseNewTlvFrame(const uint8_t* p, size_t n, BmsData& o) {
   d.errors = 0;
   d.charging = d.discharging = d.balancing = d.heating = false;
   d.balancingCurrent = 0.0f;
-  const uint8_t* cur = p + 10;       // 4E57 + length + address/type/counter
-  const uint8_t* end = p + n - 4;    // last 4 bytes are frame checksum
+  const uint8_t* cur = p + 11;       // 帧头、长度、4字节地址和命令/来源/传输类型
+  const uint8_t* end = p + n - 9;    // TLV结束于4字节记录号、0x68及校验字段之前
 
   while (cur < end) {
     uint8_t tag = *cur++;
@@ -247,30 +255,24 @@ bool JkProtocol::parseNewTlvFrame(const uint8_t* p, size_t n, BmsData& o) {
     if (cur + sz > end) return false;
 
     switch (tag) {
-      case 0x80: {
-        uint16_t raw = ((uint16_t)cur[0] << 8) | cur[1];
-        if (raw > 2731) d.mosTemperature = (raw - 2731) / 10.0f;
+      case 0x80:
+        d.mosTemperature = (float)(int16_t)(((uint16_t)cur[0] << 8) | cur[1]);
         break;
-      }
 
-      case 0x81: {
-        uint16_t raw = ((uint16_t)cur[0] << 8) | cur[1];
-        if (raw > 2731) d.temperature1 = (raw - 2731) / 10.0f;
+      case 0x81:
+        d.temperature1 = (float)(int16_t)(((uint16_t)cur[0] << 8) | cur[1]);
         break;
-      }
 
-      case 0x82: {
-        uint16_t raw = ((uint16_t)cur[0] << 8) | cur[1];
-        if (raw > 2731) d.temperature2 = (raw - 2731) / 10.0f;
+      case 0x82:
+        d.temperature2 = (float)(int16_t)(((uint16_t)cur[0] << 8) | cur[1]);
         break;
-      }
 
       case 0x83:
-        d.totalVoltage = u32be(cur) / 1000.0f;
+        d.totalVoltage = (((uint16_t)cur[0] << 8) | cur[1]) / 100.0f;
         break;
 
       case 0x84:
-        d.current = s32be(cur) / 1000.0f;
+        d.current = (float)(int16_t)(((uint16_t)cur[0] << 8) | cur[1]) / 1000.0f;
         break;
 
       case 0x85:
@@ -279,7 +281,7 @@ bool JkProtocol::parseNewTlvFrame(const uint8_t* p, size_t n, BmsData& o) {
         break;
 
       case 0x87:
-        d.cycleCount = u32be(cur);
+        d.cycleCount = ((uint16_t)cur[0] << 8) | cur[1];
         break;
 
       case 0x88:

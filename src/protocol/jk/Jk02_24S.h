@@ -4,7 +4,8 @@
 class Jk02_24S {
 public:
   static const uint8_t MAX_CELLS=24;
-  static const int DATA_OFFSET=0;
+  static const int DATA_OFFSET=0; // 主数据区相对JK02_24S的偏移
+  static const int CELL_MASK_OFFSET=54; // 24个电芯电压后紧接使能电芯bitmask
   static const size_t FRAME_LENGTH=300;
   static const char* name(){return "JK02_24S";}
 };

@@ -113,9 +113,12 @@ bool AntProtocol::parseFrame(const uint8_t* p,size_t n,BmsData& o){
   d.soc=float(u16le(p+dynamicBase+8U));
 
   // 状态字节：MOSFET 状态 1 表示开启；均衡状态 4 表示自动均衡。
-  d.charging=(p[dynamicBase+12U]==0x01);
-  d.discharging=(p[dynamicBase+13U]==0x01);
-  d.balancing=(p[dynamicBase+14U]!=0x00);
+  // p[7] 是电池运行状态：0未知、1空闲、2充电、3放电、4待机、5故障。
+  // MOSFET 开启状态不等于当前正在充/放电，因此不能用 MOS 位替代电池状态。
+  d.charging=(p[7]==0x02);
+  d.discharging=(p[7]==0x03);
+  // p[48 + cells*2 + tempSensors*2]：均衡器状态码，0x04 表示均衡开启。
+  d.balancing=(p[dynamicBase+14U]==0x04);
 
   // 容量单位为 µAh，换算 Ah 需要除以 1,000,000。
   d.totalCapacityAh=float(u32le(p+dynamicBase+16U))*0.000001f;

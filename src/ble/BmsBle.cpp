@@ -313,15 +313,26 @@ bool BmsBle::connectByAddress(const String& address,uint8_t addressType){
 
   writeCh_=nullptr;
   notifyCh_=nullptr;
-  if(ffe2 && (ffe2->canWriteNoResponse() || ffe2->canWrite())) writeCh_=ffe2;
-  if(ffe1 && (ffe1->canNotify() || ffe1->canIndicate())) notifyCh_=ffe1;
 
-  NimBLERemoteCharacteristic* chars[2]={ffe1,ffe2};
-  for(int i=0;i<2;i++){
-    NimBLERemoteCharacteristic* c=chars[i];
-    if(!c) continue;
-    if(!writeCh_ && (c->canWriteNoResponse() || c->canWrite())) writeCh_=c;
-    if(!notifyCh_ && (c->canNotify() || c->canIndicate())) notifyCh_=c;
+  // ANT 官方 BLE 通道通常是 FFE1 同一特征同时写入和通知；
+  // 不能因为设备同时暴露了 FFE2，就把 ANT 查询错误发到 FFE2。
+  const bool antSelected=(strcmp(protocolName(),"ANT")==0);
+  const bool ffe1Writable=ffe1 && (ffe1->canWriteNoResponse() || ffe1->canWrite());
+  const bool ffe1Notifiable=ffe1 && (ffe1->canNotify() || ffe1->canIndicate());
+  if(antSelected && ffe1Writable && ffe1Notifiable){
+    writeCh_=ffe1;
+    notifyCh_=ffe1;
+  } else {
+    if(ffe2 && (ffe2->canWriteNoResponse() || ffe2->canWrite())) writeCh_=ffe2;
+    if(ffe1Notifiable) notifyCh_=ffe1;
+
+    NimBLERemoteCharacteristic* chars[2]={ffe1,ffe2};
+    for(int i=0;i<2;i++){
+      NimBLERemoteCharacteristic* c=chars[i];
+      if(!c) continue;
+      if(!writeCh_ && (c->canWriteNoResponse() || c->canWrite())) writeCh_=c;
+      if(!notifyCh_ && (c->canNotify() || c->canIndicate())) notifyCh_=c;
+    }
   }
 
   Serial.printf("BLE chars: %s W=%d N=%d; %s W=%d N=%d\n",

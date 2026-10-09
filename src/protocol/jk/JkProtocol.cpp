@@ -444,12 +444,12 @@ bool JkProtocol::parseOldFrame(const uint8_t* p, size_t n, BmsData& o) {
   d.power = d.totalVoltage * d.current;
   d.temperature1 = s16le(p + 130 + off) * 0.1f;
   d.temperature2 = s16le(p + 132 + off) * 0.1f;
-  // MOS温度位于主数据区的134+off；不能把32S温度读到112+off。
-  d.mosTemperature = s16le(p + 134 + off) * 0.1f;
+  // JK02_32S的MOS温度是特殊偏移144；JK02_24S位于134。
+  d.mosTemperature = s16le(p + (off ? 112 + off : 134)) * 0.1f;
 
-  // 告警字段紧随MOS温度之后。按两字节读取，避免32S把MOS温度字节
-  // 当成32位告警码（旧实现的134+off会与MOS温度字段重叠）。
-  d.errors = u16le(p + 136 + off);
+  // JK02_24S告警码为136处的16位；JK02_32S扩展为166处的32位。
+  if (protocol32S_) d.errors = u32le(p + 134 + off);
+  else d.errors = u16le(p + 136);
 
   d.balancingCurrent = u16le(p + 138 + off) * 0.001f;
   d.balancing = p[140 + off] != 0;
@@ -457,6 +457,8 @@ bool JkProtocol::parseOldFrame(const uint8_t* p, size_t n, BmsData& o) {
   if (d.soc > 100.0f) d.soc = 100.0f;
   d.remainingCapacityAh = u32le(p + 142 + off) * 0.001f;
   d.totalCapacityAh = u32le(p + 146 + off) * 0.001f;
+  // JK02_24S循环次数位于150；JK02_32S位于182（随主数据区偏移）。
+  d.cycleCount = u32le(p + 150 + off);
 
   if (d.energyConsumptionWhKm > 1.0f && d.totalVoltage > 0.1f)
     d.remainingRangeKm =

@@ -52,13 +52,15 @@ int AntProtocol::findFrameStart(const uint8_t* p,size_t n) const{
 }
 
 size_t AntProtocol::frameLength(const uint8_t* p,size_t n) const{
+  frameLength_=0;
   if(!p || n<6 || p[0]!=0x7E || p[1]!=0xA1) return 0;
   // 本解析器只处理状态应答 0x11；其他响应不能按实时数据结构解释。
   if(p[2]!=0x11) return 0;
   const size_t total=size_t(p[5])+10U;
   // p[5] 为单字节，合法整帧长度最多 265 字节。
   if(total<10U || total>265U) return 0;
-  return total;
+  frameLength_=total;
+  return frameLength_;
 }
 
 bool AntProtocol::parseFrame(const uint8_t* p,size_t n,BmsData& o){

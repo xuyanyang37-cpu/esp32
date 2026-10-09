@@ -359,9 +359,11 @@ bool BmsBle::connectByAddress(const String& address,uint8_t addressType){
   // 必须等收到有效BMS数据后，才正式保存快速连接目标。
   configuredAddressType_=addressType;
   g_bmsData.mac=address;
-  g_bmsData.online=true;
-  g_bmsData.bootState=BOOT_CONNECTED;
-  g_bmsData.statusMessage="已连接JK电池";
+  // GATT连接成功不等于BMS遥测有效；等待首个校验通过的数据帧后再进入主界面。
+  g_bmsData.online=false;
+  g_bmsData.valid=false;
+  g_bmsData.bootState=BOOT_CONNECTING;
+  g_bmsData.statusMessage="蓝牙已连接，等待BMS数据";
   g_bmsData.scanAttempt=scanAttempt_;
 
   // --------------------------------------------------------------
@@ -476,6 +478,9 @@ void BmsBle::handleNotification(const uint8_t* d,size_t n){
 
     if(protocolManager_.parseFrame(g_rxBuf,expected,g_bmsData)){
       g_bmsData.online=true;
+      g_bmsData.valid=true;
+      g_bmsData.bootState=BOOT_CONNECTED;
+      g_bmsData.statusMessage="已接收有效BMS数据";
       g_bmsData.updateMs=millis();
 
       // 只有真正解析出有效BMS帧后，才保存当前候选MAC。
@@ -583,7 +588,10 @@ void BmsBle::loop(){
   uint32_t now=millis();
 
   if(!connected()){
+    // 断线后不能把上次缓存的数据继续当作当前有效数据，
+    // 否则重新连接后会跳过“等待首帧验证”。
     g_bmsData.online=false;
+    g_bmsData.valid=false;
     recoveryVerifyStart_=0;
 
     // 只有首次启动已经成功进入正常运行后，才启用“断线恢复3次失败 -> 热点”。
@@ -675,8 +683,9 @@ void BmsBle::loop(){
     if(now-lastRequest_>=250){ request(0x03); lastRequest_=now; }
   } else if(strcmp(proto,"ANT")==0){
     if(now-lastRequest_>=2000){ requestAntStatus(); lastRequest_=now; }
-  } else if(strcmp(proto,"JK")==0){
-    // 与 dionipe 的常规 JK polling 保持一致：继续请求 CELL_INFO(0x96)。
+  } else if(strcmp(proto,"JK02_24S")==0 || strcmp(proto,"JK02_32S")==0 || strcmp(proto,"JK")==0){
+    // JkProtocol::name()返回具体型号JK02_24S/JK02_32S，不是通用字符串JK。
+    // 因此必须同时识别两种名称，否则初始化后不会继续请求CELL_INFO(0x96)。
     if(now-lastRequest_>=5000){ request(0x96); lastRequest_=now; }
   } else if(strcmp(proto,"JBD")==0){
     // JBD 标准查询交替读取基本信息(0x03)和单体电压(0x04)。

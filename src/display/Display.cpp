@@ -129,11 +129,11 @@ bool Display::ensureDashboardBuffers() {
   barSprite_.setColorDepth(16);
 
   if (!socSprite_.createSprite(140, 91)) return false;
-  if (!leftInfoSprite_.createSprite(140, 36)) {
+  if (!leftInfoSprite_.createSprite(140, 31)) {
     socSprite_.deleteSprite();
     return false;
   }
-  if (!rowSprite_.createSprite(168, 36)) {
+  if (!rowSprite_.createSprite(168, 32)) {
     leftInfoSprite_.deleteSprite();
     socSprite_.deleteSprite();
     return false;
@@ -201,6 +201,7 @@ void Display::update(const BmsData& d) {
     drawConfiguredRow(3, d);
     drawTemperature(d);
     if (g_displayConfig.socBar) drawSocBar(d);
+    else tft_.fillRect(4, 157, 312, 12, TFT_BLACK);
     lastDisplayConfig_ = g_displayConfig;
   } else {
     drawDashboard(d, firstDashboard_);
@@ -472,10 +473,10 @@ void Display::drawSoc(const BmsData& d) {
 void Display::drawTemperature(const BmsData& d) {
   leftInfoSprite_.fillSprite(TFT_BLACK);
 
-  // 左下只放“温度 + 容量”，整体高度 36px。
-  // 该区域顶部 y=118，与右侧第四行“剩余里程”完全对齐。
-  leftInfoSprite_.fillRoundRect(0, 0, 68, 36, 7, UI_PANEL);
-  leftInfoSprite_.fillRoundRect(72, 0, 68, 36, 7, UI_PANEL);
+  // 左下温度/容量卡片高度限制为31px，底部精确停在Y=157。
+  // 这样后续局部刷新不会覆盖底部SOC进度条（Y=157起）。
+  leftInfoSprite_.fillRoundRect(0, 0, 68, 31, 7, UI_PANEL);
+  leftInfoSprite_.fillRoundRect(72, 0, 68, 31, 7, UI_PANEL);
 
   // 温度卡片：小标题 + 数值。
   const uint16_t tempColor = g_displayConfig.tempColor;
@@ -624,7 +625,7 @@ void Display::drawMinVoltage(const BmsData& d) {
 
 void Display::drawRange(const BmsData& d) {
   rowSprite_.fillSprite(TFT_BLACK);
-  rowSprite_.fillRoundRect(0, 0, 168, 36, 7, UI_PANEL);
+  rowSprite_.fillRoundRect(0, 0, 168, 32, 7, UI_PANEL);
 
   FontGB2312::drawText(rowSprite_, 8, 7,
                        "剩余里程",

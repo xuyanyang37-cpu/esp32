@@ -573,7 +573,7 @@ void BmsBle::onYanyangDeviceInfo(const char* hardwareVersion,const char* softwar
   g_bmsData.hardwareVersion=hardwareVersion ? hardwareVersion : "";
   g_bmsData.softwareVersion=softwareVersion ? softwareVersion : "";
   if(g_bmsData.deviceName.length()==0) g_bmsData.deviceName="YANYANG BMS";
-  Serial.printf("Yanyang BMS detected: HW=%s SW=%s\\n",
+  Serial.printf("Yanyang BMS detected: HW=%s SW=%s\n",
                 hardwareVersion ? hardwareVersion : "unknown",
                 softwareVersion ? softwareVersion : "unknown");
 }

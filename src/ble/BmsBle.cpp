@@ -562,6 +562,7 @@ void BmsBle::request(uint8_t cmd){
   if(!protocolManager_.buildCommand(cmd,counter_++,f)) return;
   size_t n=20;
   if(strcmp(protocolManager_.protocolName(),"TT")==0) n=8;
+  else if(strcmp(protocolManager_.protocolName(),"JBD")==0) n=7;
   if(writer->canWriteNoResponse()) writer->writeValue(f,n,false);
   else if(writer->canWrite()) writer->writeValue(f,n,true);
 }
@@ -667,7 +668,10 @@ void BmsBle::loop(){
   } else if(strcmp(proto,"JK")==0){
     // 与 dionipe 的常规 JK polling 保持一致：继续请求 CELL_INFO(0x96)。
     if(now-lastRequest_>=5000){ request(0x96); lastRequest_=now; }
-  } else if(strcmp(proto,"JBD")==0 || strcmp(proto,"DALY")==0){
+  } else if(strcmp(proto,"JBD")==0){
+    // JBD 标准查询交替读取基本信息(0x03)和单体电压(0x04)。
+    if(now-lastRequest_>=2000){ request((counter_ & 0x01) ? 0x03 : 0x04); lastRequest_=now; }
+  } else if(strcmp(proto,"DALY")==0){
     if(now-lastRequest_>=2000){ request(0x03); lastRequest_=now; }
   }
 }

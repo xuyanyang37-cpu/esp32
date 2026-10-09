@@ -430,7 +430,7 @@ void BmsBle::handleNotification(const uint8_t* d,size_t n){
 
     for(size_t i=0;i+2<ackLimit;){
       if(g_rxBuf[i]==0xFC && g_rxBuf[i+2]==0x06){
-        Serial.printf("BMS RX: legacy ACK FC %02X 06\\n",g_rxBuf[i+1]);
+        Serial.printf("BMS RX: legacy ACK FC %02X 06\n",g_rxBuf[i+1]);
         g_legacyAckSeen=true;
         memmove(g_rxBuf+i,g_rxBuf+i+3,g_rxLen-(i+3));
         g_rxLen-=3;
@@ -468,7 +468,7 @@ void BmsBle::handleNotification(const uint8_t* d,size_t n){
       continue;
     }
     if(expected>sizeof(g_rxBuf)){
-      Serial.printf("BMS RX: invalid frame length=%u, reset\\n",(unsigned)expected);
+      Serial.printf("BMS RX: invalid frame length=%u, reset\n",(unsigned)expected);
       g_rxLen=0;
       break;
     }
@@ -491,7 +491,7 @@ void BmsBle::handleNotification(const uint8_t* d,size_t n){
       String saved=p.getString("protocol","");
       if(detected && detected[0] && strcmp(detected,"NONE")!=0 && strcmp(detected,saved.c_str())!=0){
         p.putString("protocol",detected);
-        Serial.printf("BMS protocol locked: %s\\n",detected);
+        Serial.printf("BMS protocol locked: %s\n",detected);
       }
       p.end();
     }

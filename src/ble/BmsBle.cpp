@@ -38,6 +38,9 @@
 static const char* SERVICE="FFE0";
 static const char* JK_NOTIFY_UUID="FFE1";
 static const char* JK_WRITE_UUID="FFE2";
+static const char* JBD_SERVICE="FF00";
+static const char* JBD_NOTIFY_UUID="FF01";
+static const char* JBD_WRITE_UUID="FF02";
 BmsBle* BmsBle::instance_=nullptr;
 static BmsBle* g_scanOwner=nullptr;
 static uint8_t g_rxBuf[700];
@@ -285,19 +288,28 @@ bool BmsBle::connectByAddress(const String& address,uint8_t addressType){
     return false;
   }
 
+  // JK/部分兼容板使用FFE0/FFE1/FFE2；常见嘉佰达JBD蓝牙模块使用FF00/FF01/FF02。
+  // 先找JK服务，找不到时再尝试JBD标准服务。
   NimBLERemoteService* s=client_->getService(NimBLEUUID(SERVICE));
+  bool jbdUuidSet=false;
+  if(!s){
+    s=client_->getService(NimBLEUUID(JBD_SERVICE));
+    jbdUuidSet=(s!=nullptr);
+  }
   if(!s){
     client_->disconnect();
     NimBLEDevice::deleteClient(client_);
     client_=nullptr;
     ch_=nullptr; writeCh_=nullptr; notifyCh_=nullptr;
-    setStatus(BOOT_SCANNING,"找不到FFE0服务");
+    setStatus(BOOT_SCANNING,"找不到FFE0/FF00服务");
     return false;
   }
 
-  // 标准角色优先：FFE1 通知、FFE2 写入；若固件交换属性，再按 capability 自动寻找。
-  NimBLERemoteCharacteristic* ffe1=s->getCharacteristic(NimBLEUUID(JK_NOTIFY_UUID));
-  NimBLERemoteCharacteristic* ffe2=s->getCharacteristic(NimBLEUUID(JK_WRITE_UUID));
+  const char* notifyUuid=jbdUuidSet?JBD_NOTIFY_UUID:JK_NOTIFY_UUID;
+  const char* writeUuid=jbdUuidSet?JBD_WRITE_UUID:JK_WRITE_UUID;
+  // 先按标准UUID取特征；若设备交换属性，再按属性自动寻找。
+  NimBLERemoteCharacteristic* ffe1=s->getCharacteristic(NimBLEUUID(notifyUuid));
+  NimBLERemoteCharacteristic* ffe2=s->getCharacteristic(NimBLEUUID(writeUuid));
 
   writeCh_=nullptr;
   notifyCh_=nullptr;
@@ -312,7 +324,7 @@ bool BmsBle::connectByAddress(const String& address,uint8_t addressType){
     if(!notifyCh_ && (c->canNotify() || c->canIndicate())) notifyCh_=c;
   }
 
-  Serial.printf("JK BLE chars: FFE1 W=%d N=%d; FFE2 W=%d N=%d\n",
+  Serial.printf("BLE chars: %s W=%d N=%d; %s W=%d N=%d\n", notifyUuid,
                 ffe1 ? (int)(ffe1->canWriteNoResponse() || ffe1->canWrite()) : 0,
                 ffe1 ? (int)(ffe1->canNotify() || ffe1->canIndicate()) : 0,
                 ffe2 ? (int)(ffe2->canWriteNoResponse() || ffe2->canWrite()) : 0,
@@ -323,7 +335,7 @@ bool BmsBle::connectByAddress(const String& address,uint8_t addressType){
     NimBLEDevice::deleteClient(client_);
     client_=nullptr;
     ch_=nullptr; writeCh_=nullptr; notifyCh_=nullptr;
-    setStatus(BOOT_SCANNING,"FFE1不可写");
+    setStatus(BOOT_SCANNING,"BLE数据特征不可写");
     return false;
   }
 
@@ -332,7 +344,7 @@ bool BmsBle::connectByAddress(const String& address,uint8_t addressType){
     NimBLEDevice::deleteClient(client_);
     client_=nullptr;
     ch_=nullptr; writeCh_=nullptr; notifyCh_=nullptr;
-    setStatus(BOOT_SCANNING,"FFE1/FFE2无通知能力");
+    setStatus(BOOT_SCANNING,"BLE数据特征无通知能力");
     return false;
   }
 
@@ -349,7 +361,7 @@ bool BmsBle::connectByAddress(const String& address,uint8_t addressType){
     NimBLEDevice::deleteClient(client_);
     client_=nullptr;
     ch_=nullptr; writeCh_=nullptr; notifyCh_=nullptr;
-    setStatus(BOOT_SCANNING,"FFE1/FFE2通知订阅失败");
+    setStatus(BOOT_SCANNING,"BLE通知订阅失败");
     return false;
   }
 

@@ -387,6 +387,9 @@ bool JkProtocol::parseOldFrame(const uint8_t* p, size_t n, BmsData& o) {
   if (!p || n != 300 || n < (size_t)(184 + off)) return false;
   if (!(p[0] == 0x55 && p[1] == 0xAA && p[2] == 0xEB && p[3] == 0x90)) return false;
 
+  // 0x02 是旧版300字节协议的实时数据帧；设备信息/配置帧不能按遥测偏移解析。
+  if (p[4] != 0x02) return false;
+
   // 旧JK固定300字节帧：byte[299]为 byte[0..298] 的8位累加校验。
   uint8_t crc=0;
   for(size_t i=0;i<299;i++) crc=(uint8_t)(crc+p[i]);

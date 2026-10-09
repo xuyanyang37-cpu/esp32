@@ -220,7 +220,8 @@ bool JkProtocol::parseNewTlvFrame(const uint8_t* p, size_t n, BmsData& o) {
   while (cur < end) {
     uint8_t tag = *cur++;
     int sz = tagSize(tag);
-    if (sz == 0) break;
+    // 未知Tag没有可推断的长度，不能跳过或接受不完整遥测帧。
+    if (sz == 0) return false;
 
     if (sz < 0) {
       if (cur >= end) return false;

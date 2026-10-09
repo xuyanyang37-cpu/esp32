@@ -382,9 +382,10 @@ bool JkProtocol::parseNewTlvFrame(const uint8_t* p, size_t n, BmsData& o) {
 
 // [旧版解析] 按24S/32S offset读取固定300字节数据。
 bool JkProtocol::parseOldFrame(const uint8_t* p, size_t n, BmsData& o) {
+  if (!p) return false;
   int off = detectOffset(p, n);
 
-  if (!p || n != 300 || n < (size_t)(184 + off)) return false;
+  if (n != 300 || n < (size_t)(184 + off)) return false;
   if (!(p[0] == 0x55 && p[1] == 0xAA && p[2] == 0xEB && p[3] == 0x90)) return false;
 
   // 0x02 是旧版300字节协议的实时数据帧；设备信息/配置帧不能按遥测偏移解析。
@@ -395,6 +396,9 @@ bool JkProtocol::parseOldFrame(const uint8_t* p, size_t n, BmsData& o) {
   for(size_t i=0;i<299;i++) crc=(uint8_t)(crc+p[i]);
   if(crc!=p[299]) return false;
 
+
+  // 先在临时对象中解析；任何后续有效性检查失败都不能污染主界面数据。
+  BmsData d = o;
   uint32_t mask = u32le(p + 54 + off);
   uint8_t maxCells = protocol32S_ ? Jk02_32S::MAX_CELLS : Jk02_24S::MAX_CELLS;
   uint8_t cells = 0;
@@ -409,14 +413,14 @@ bool JkProtocol::parseOldFrame(const uint8_t* p, size_t n, BmsData& o) {
   float maxV = 0.0f;
   uint8_t minC = 0, maxC = 0;
 
-  for (uint8_t i = 0; i < JK_MAX_CELLS; ++i) o.cellVoltage[i] = 0;
+  for (uint8_t i = 0; i < JK_MAX_CELLS; ++i) d.cellVoltage[i] = 0;
 
   for (uint8_t i = 0; i < cells; ++i) {
     size_t pos = 6 + i * 2;
     if (pos + 1 >= n) break;
 
     float v = u16le(p + pos) * 0.001f;
-    o.cellVoltage[i] = v;
+    d.cellVoltage[i] = v;
 
     if (v > 0.5f && v < 6.0f) {
       if (v < minV) { minV = v; minC = i + 1; }
@@ -424,43 +428,55 @@ bool JkProtocol::parseOldFrame(const uint8_t* p, size_t n, BmsData& o) {
     }
   }
 
-  o.cellCount = cells;
-  o.minCellVoltage = minV < 100.0f ? minV : 0.0f;
-  o.maxCellVoltage = maxV;
-  o.deltaCellVoltage = (maxV > 0.0f && minV < 100.0f) ? maxV - minV : 0.0f;
-  o.minCell = minC;
-  o.maxCell = maxC;
+  d.cellCount = cells;
+  d.minCellVoltage = minV < 100.0f ? minV : 0.0f;
+  d.maxCellVoltage = maxV;
+  d.deltaCellVoltage = (maxV > 0.0f && minV < 100.0f) ? maxV - minV : 0.0f;
+  d.minCell = minC;
+  d.maxCell = maxC;
 
-  o.totalVoltage = u32le(p + 118 + off) * 0.001f;
-  o.current = (int32_t)u32le(p + 126 + off) * 0.001f;
-  o.power = o.totalVoltage * o.current;
-  o.temperature1 = s16le(p + 130 + off) * 0.1f;
-  o.temperature2 = s16le(p + 132 + off) * 0.1f;
-  o.mosTemperature = s16le(p + (off ? 112 + off : 134)) * 0.1f;
+  d.totalVoltage = u32le(p + 118 + off) * 0.001f;
+  d.current = (int32_t)u32le(p + 126 + off) * 0.001f;
+  d.power = d.totalVoltage * d.current;
+  d.temperature1 = s16le(p + 130 + off) * 0.1f;
+  d.temperature2 = s16le(p + 132 + off) * 0.1f;
+  d.mosTemperature = s16le(p + (off ? 112 + off : 134)) * 0.1f;
 
-  if (protocol32S_) o.errors = u32le(p + 134 + off);
-  else o.errors = u16le(p + 136);
+  if (protocol32S_) d.errors = u32le(p + 134 + off);
+  else d.errors = u16le(p + 136);
 
-  o.balancingCurrent = u16le(p + 138 + off) * 0.001f;
-  o.balancing = p[140 + off] != 0;
-  o.soc = p[141 + off];
-  if (o.soc > 100.0f) o.soc = 100.0f;
-  o.remainingCapacityAh = u32le(p + 142 + off) * 0.001f;
-  o.totalCapacityAh = u32le(p + 146 + off) * 0.001f;
+  d.balancingCurrent = u16le(p + 138 + off) * 0.001f;
+  d.balancing = p[140 + off] != 0;
+  d.soc = p[141 + off];
+  if (d.soc > 100.0f) d.soc = 100.0f;
+  d.remainingCapacityAh = u32le(p + 142 + off) * 0.001f;
+  d.totalCapacityAh = u32le(p + 146 + off) * 0.001f;
 
-  if (o.energyConsumptionWhKm > 1.0f && o.totalVoltage > 0.1f)
-    o.remainingRangeKm =
-      (o.remainingCapacityAh * o.totalVoltage) / o.energyConsumptionWhKm;
+  if (d.energyConsumptionWhKm > 1.0f && d.totalVoltage > 0.1f)
+    d.remainingRangeKm =
+      (d.remainingCapacityAh * d.totalVoltage) / d.energyConsumptionWhKm;
 
-  o.charging = p[166 + off] != 0;
-  o.discharging = p[167 + off] != 0;
-  o.balancing = o.balancing || p[169 + off] != 0;
-  o.heating = p[183 + off] != 0;
-  o.valid = o.totalVoltage > 0.1f;
-  o.online = o.valid;
-  o.updateMs = millis();
+  d.charging = p[166 + off] != 0;
+  d.discharging = p[167 + off] != 0;
+  d.balancing = d.balancing || p[169 + off] != 0;
+  d.heating = p[183 + off] != 0;
+  // 除总电压外，还要求电芯数与每节电压处于合理范围，防止偏移错误造成假在线。
+  bool cellsPlausible = d.cellCount >= 1 && d.cellCount <= maxCells;
+  bool voltagesPlausible = true;
+  for (uint8_t i = 0; i < d.cellCount; ++i) {
+    if (d.cellVoltage[i] < 0.5f || d.cellVoltage[i] > 6.0f) {
+      voltagesPlausible = false;
+      break;
+    }
+  }
+  d.valid = d.totalVoltage >= 1.0f && d.totalVoltage <= 100.0f &&
+            cellsPlausible && voltagesPlausible;
+  d.online = d.valid;
+  d.updateMs = millis();
 
-  return o.valid;
+  if (!d.valid) return false;
+  o = d;
+  return true;
 }
 
 // [Legacy RS485] 兼容 JK BLE-RS485 bridge 的 EB90 74字节响应。
